@@ -2,31 +2,35 @@
 
 Agent-first REST API for the [LOCATE1](https://github.com/axiemaid/locate1) peer observation protocol on BSV.
 
-Ingests LOCATE1 attestations from chain via [JungleBus](https://junglebus.gorillapool.io), stores them in SQLite, and serves nine query endpoints designed for interpretation layers — positioning, trust scoring, presence detection, trilateration.
+Ingests LOCATE1 attestations from chain via [JungleBus](https://junglebus.gorillapool.io), stores them in SQLite, and serves query endpoints designed for interpretation layers — positioning, trust scoring, presence detection, trilateration.
 
 No opinions. No derived data. Just raw attestations, stored and queryable.
 
 **Live instance:** https://locate1.axiemaid.com
 
-## Endpoints
+## API
+
+### Endpoints
 
 | Endpoint | Description |
 |---|---|
 | `GET /status` | Network stats — attestation count, observers, peers, scan progress |
-| `GET /pubkey/:pub` | Full history — every attestation involving this key (as observer or peer) ¹ |
-| `GET /pair/:pub1/:pub2` | Relationship — every attestation between two specific machines ¹ |
-| `GET /blocks?from=N&to=M` | Time window — attestations in a block range (for trilateration) ¹ |
-| `GET /observer/:pub` | One machine's worldview — everything it observed ¹ |
-| `GET /peer/:pub` | Evidence of existence — everything observed about this key ¹ |
-| `GET /method/:type` | By measurement type — `rssi`, `uwb`, or `ultrasonic` ¹ |
+| `GET /pubkey/:pub` | Full history — every attestation involving this key (as observer or peer) |
+| `GET /pair/:pub1/:pub2` | Relationship — every attestation between two specific machines |
+| `GET /blocks?from=N&to=M` | Time window — attestations in a block range (for trilateration) |
+| `GET /observer/:pub` | One machine's worldview — everything it observed |
+| `GET /peer/:pub` | Evidence of existence — everything observed about this key |
+| `GET /method/:type` | By measurement type — `rssi`, `uwb`, or `ultrasonic` |
 | `GET /latest/:pub` | Current presence — most recent attestation involving this key |
 | `GET /active?from=N&to=M` | Attendance list — all pubkeys active in a block range |
 | `GET /count/:pub` | Availability score — total attestation count for a pubkey |
 | `ws://` | WebSocket — live attestations pushed as JSON on connect |
 
-¹ Supports cursor pagination (`?after=&limit=`)
+All list endpoints support cursor pagination with `?after=<cursor>&limit=<n>`.
 
-All list endpoints return paginated responses:
+### Example Response
+
+`GET /pubkey/03a00f7cad1d90d958d9173d09af24d4f6458e7ea97253d77ca7cf6603d9a1f5ad?limit=1`
 
 ```json
 {
@@ -47,6 +51,8 @@ All list endpoints return paginated responses:
 }
 ```
 
+### Fields
+
 | Field | Type | Description |
 |---|---|---|
 | `txid` | string | Transaction ID on BSV |
@@ -58,7 +64,9 @@ All list endpoints return paginated responses:
 | `value` | int | Measurement — dBm for RSSI, nanoseconds for UWB, microseconds for ultrasonic |
 | `sig` | string | ECDSA signature over the attestation payload (hex) |
 
-Pass `?after=<cursor>` to get the next page. Poll with your last cursor to stream new attestations.
+### Pagination
+
+Pass `?after=<cursor>` to get the next page. `cursor` is an opaque token from the previous response. Poll with your last cursor to stream new attestations incrementally.
 
 `?limit=` controls page size (default 100, max 1000).
 
@@ -72,7 +80,23 @@ Connect to `ws://host:port` for real-time attestation push. Each message is one 
 
 REST and WebSocket speak the same attestation format. The only difference is delivery: pull vs push.
 
-## JungleBus Subscription
+## Self-Hosting
+
+```bash
+npm install
+node index.cjs --sub <junglebus_subscription_id> --from <block_height>
+```
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port` | 3011 | HTTP + WebSocket port |
+| `--sub` | — | JungleBus subscription ID (required) |
+| `--from` | 0 | Start block height |
+| `--db` | `./locate1.db` | SQLite database path |
+
+### JungleBus Subscription
 
 Create a subscription at [junglebus.gorillapool.io](https://junglebus.gorillapool.io):
 
@@ -82,26 +106,7 @@ Create a subscription at [junglebus.gorillapool.io](https://junglebus.gorillapoo
 
 Copy the subscription ID for the `--sub` flag.
 
-To debug how JungleBus parses/classifies a specific transaction:
-```
-https://junglebus.gorillapool.io/v1/transaction/get/<txid>
-```
-Check that `output_types` includes `nulldata` and `contexts` includes `LOCATE1`.
-
-## Usage
-
-```bash
-npm install
-node index.cjs --sub <junglebus_subscription_id> --from <block_height>
-```
-
-Options:
-- `--port` — HTTP port (default: 3011)
-- `--sub` — JungleBus subscription ID (required)
-- `--from` — Start block height (default: 0)
-- `--db` — SQLite database path (default: `./locate1.db`)
-
-## LOCATE1 Protocol
+## Protocol
 
 Each attestation is an on-chain OP_RETURN:
 
