@@ -147,6 +147,17 @@ function onStatus (ctx) {
   if (ctx.statusCode === 200) lastBlock = ctx.block || lastBlock
 }
 
+// --- Pagination helper ---
+// Cursor = rowid. All list endpoints return { data, cursor, hasMore }.
+// Pass ?after=<cursor> to get next page. Forward-only, stable under inserts.
+function paginate (res, rows, limit) {
+  const hasMore = rows.length === limit
+  const cursor = rows.length ? rows[rows.length - 1]._rowid : null
+  // Strip internal _rowid from response
+  const data = rows.map(({ _rowid, ...rest }) => rest)
+  return json(res, { data, cursor, hasMore })
+}
+
 // --- HTTP server ---
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json')
@@ -157,6 +168,7 @@ const server = http.createServer((req, res) => {
   const q = url.searchParams
 
   const limit = Math.min(parseInt(q.get('limit') || '100'), 1000)
+  const after = q.get('after') ? parseInt(q.get('after')) : 0
 
   try {
     // 1. Status
@@ -171,50 +183,50 @@ const server = http.createServer((req, res) => {
     // 2. By pubkey — everything involving this key (as observer OR peer)
     if (p.startsWith('/pubkey/') && p.split('/').length === 3) {
       const pub = p.split('/')[2]
-      const rows = db.prepare('SELECT * FROM attestations WHERE observer = ? OR peer = ? ORDER BY block DESC, ts DESC LIMIT ?').all(pub, pub, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE (observer = ? OR peer = ?) AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(pub, pub, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 3. By pubkey pair — everything between A and B
     if (p.startsWith('/pair/') && p.split('/').length === 4) {
       const [, , a, b] = p.split('/')
-      const rows = db.prepare('SELECT * FROM attestations WHERE (observer = ? AND peer = ?) OR (observer = ? AND peer = ?) ORDER BY block DESC, ts DESC LIMIT ?').all(a, b, b, a, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE ((observer = ? AND peer = ?) OR (observer = ? AND peer = ?)) AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(a, b, b, a, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 4. By block range — between block N and M
     if (p === '/blocks') {
       const from = parseInt(q.get('from') || '0')
       const to = parseInt(q.get('to') || '999999999')
-      const rows = db.prepare('SELECT * FROM attestations WHERE block >= ? AND block <= ? ORDER BY block ASC, ts ASC LIMIT ?').all(from, to, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE block >= ? AND block <= ? AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(from, to, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 5. By observer — one machine's view of the world
     if (p.startsWith('/observer/') && p.split('/').length === 3) {
       const pub = p.split('/')[2]
-      const rows = db.prepare('SELECT * FROM attestations WHERE observer = ? ORDER BY block DESC, ts DESC LIMIT ?').all(pub, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE observer = ? AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(pub, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 6. By peer — everything observed about this key
     if (p.startsWith('/peer/') && p.split('/').length === 3) {
       const pub = p.split('/')[2]
-      const rows = db.prepare('SELECT * FROM attestations WHERE peer = ? ORDER BY block DESC, ts DESC LIMIT ?').all(pub, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE peer = ? AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(pub, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 7. By method — all attestations of a given type
     if (p.startsWith('/method/') && p.split('/').length === 3) {
       const method = p.split('/')[2]
-      const rows = db.prepare('SELECT * FROM attestations WHERE method = ? ORDER BY block DESC, ts DESC LIMIT ?').all(method, limit)
-      return json(res, rows)
+      const rows = db.prepare('SELECT rowid AS _rowid, * FROM attestations WHERE method = ? AND rowid > ? ORDER BY rowid ASC LIMIT ?').all(method, after, limit)
+      return paginate(res, rows, limit)
     }
 
     // 8. Latest by pubkey — most recent attestation involving this key
     if (p.startsWith('/latest/') && p.split('/').length === 3) {
       const pub = p.split('/')[2]
-      const row = db.prepare('SELECT * FROM attestations WHERE observer = ? OR peer = ? ORDER BY block DESC, ts DESC LIMIT 1').get(pub, pub)
+      const row = db.prepare('SELECT * FROM attestations WHERE observer = ? OR peer = ? ORDER BY rowid DESC LIMIT 1').get(pub, pub)
       return json(res, row || null)
     }
 
@@ -245,12 +257,12 @@ const server = http.createServer((req, res) => {
       error: 'not found',
       endpoints: [
         'GET /status',
-        'GET /pubkey/:pub',
-        'GET /pair/:pub1/:pub2',
-        'GET /blocks?from=N&to=M',
-        'GET /observer/:pub',
-        'GET /peer/:pub',
-        'GET /method/:type',
+        'GET /pubkey/:pub?after=&limit=',
+        'GET /pair/:pub1/:pub2?after=&limit=',
+        'GET /blocks?from=N&to=M&after=&limit=',
+        'GET /observer/:pub?after=&limit=',
+        'GET /peer/:pub?after=&limit=',
+        'GET /method/:type?after=&limit=',
         'GET /latest/:pub',
         'GET /active?from=N&to=M',
         'GET /count/:pub'
