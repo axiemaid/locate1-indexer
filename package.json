@@ -1,0 +1,24 @@
+{
+  "name": "locate1-collector",
+  "version": "1.0.0",
+  "description": "Dumb pipe from JungleBus LOCATE1 stream to local WebSocket. No opinions, no state, no interpretation.",
+  "main": "collector.cjs",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node collector.cjs"
+  },
+  "keywords": [
+    "bsv",
+    "locate1",
+    "junglebus",
+    "websocket"
+  ],
+  "author": "axiemaid",
+  "license": "MIT",
+  "dependencies": {
+    "@gorillapool/js-junglebus": "^0.4.4",
+    "better-sqlite3": "^12.6.2",
+    "bsv": "^1.5.6",
+    "ws": "^8.19.0"
+  }
+}
