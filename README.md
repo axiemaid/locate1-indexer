@@ -1,6 +1,6 @@
 # locate1-indexer
 
-Agent-first REST API for the [LOCATE1](https://github.com/axiemaid/locate1) peer observation protocol on BSV.
+Agent-first REST + WebSocket API for the [LOCATE1](https://github.com/axiemaid/locate1) peer observation protocol on BSV.
 
 Ingests LOCATE1 attestations from chain via [JungleBus](https://junglebus.gorillapool.io), stores them in SQLite, and serves query endpoints designed for interpretation layers — positioning, trust scoring, presence detection, trilateration.
 
