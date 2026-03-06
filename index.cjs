@@ -361,10 +361,21 @@ async function main () {
   // WebSocket upgrades on the same port
   const wss = new WebSocketServer({ server })
   wss.on('connection', (ws) => {
+    ws.isAlive = true
+    ws.on('pong', () => { ws.isAlive = true })
     clients.add(ws)
     ws.on('close', () => clients.delete(ws))
     ws.on('error', () => clients.delete(ws))
   })
+
+  // Ping/pong heartbeat — reap dead connections every 30s
+  setInterval(() => {
+    for (const ws of clients) {
+      if (!ws.isAlive) { ws.terminate(); clients.delete(ws); continue }
+      ws.isAlive = false
+      ws.ping()
+    }
+  }, 30_000)
 
   server.listen(PORT)
   await jungle.Subscribe(SUB_ID, startBlock, ingest, onStatus, console.error, ingest)
