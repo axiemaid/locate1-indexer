@@ -29,8 +29,34 @@ No opinions. No derived data. Just raw attestations, stored and queryable.
 All list endpoints return paginated responses:
 
 ```json
-{ "data": [...], "cursor": 42, "hasMore": true }
+{
+  "data": [
+    {
+      "txid": "0ede320a18cad8e95fdc8114dbd9e4807e1b3c24773a62382fc28b452f323e27",
+      "block": 938851,
+      "ts": 1772605732,
+      "observer": "03a00f7cad1d90d958d9173d09af24d4f6458e7ea97253d77ca7cf6603d9a1f5ad",
+      "peer": "0303339885d442d21a9642057315827d02275da49e53e36c5882038a8010f06023",
+      "method": "rssi",
+      "value": -12,
+      "sig": "928c5f65f923610776160799..."
+    }
+  ],
+  "cursor": 3,
+  "hasMore": true
+}
 ```
+
+| Field | Type | Description |
+|---|---|---|
+| `txid` | string | Transaction ID on BSV |
+| `block` | int \| null | Block height (`null` if unconfirmed) |
+| `ts` | int \| null | Block timestamp (unix seconds) |
+| `observer` | string | Compressed public key of the measuring device (hex) |
+| `peer` | string | Compressed public key of the observed device (hex) |
+| `method` | string | `rssi`, `uwb`, or `ultrasonic` |
+| `value` | int | Measurement — dBm for RSSI, nanoseconds for UWB, microseconds for ultrasonic |
+| `sig` | string | ECDSA signature over the attestation payload (hex) |
 
 Pass `?after=<cursor>` to get the next page. Poll with your last cursor to stream new attestations.
 
@@ -38,13 +64,13 @@ Pass `?after=<cursor>` to get the next page. Poll with your last cursor to strea
 
 ### WebSocket
 
-Connect to `ws://host:port` for real-time attestation push. Each verified attestation is broadcast as a JSON message:
+Connect to `ws://host:port` for real-time attestation push. Each message is one attestation — same fields as above, no pagination wrapper:
 
 ```json
-{"txid":"...","block":null,"ts":1772774554,"observer":"03033398...","peer":"03a00f7c...","method":"rssi","measurement":-20}
+{"txid":"...","block":null,"ts":1772774554,"observer":"03a00f7c...","peer":"03033398...","method":"rssi","value":-20,"sig":"..."}
 ```
 
-The `block` field is `null` for mempool attestations and gets backfilled on confirmation. Same port as the REST API — upgrade-based.
+REST and WebSocket speak the same attestation format. The only difference is delivery: pull vs push.
 
 ## JungleBus Subscription
 
