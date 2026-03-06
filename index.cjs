@@ -60,11 +60,11 @@ db.exec(`
     sig         TEXT NOT NULL,
     PRIMARY KEY (txid, observer, peer)
   );
-  CREATE INDEX IF NOT EXISTS idx_observer ON attestations(observer, ts DESC);
-  CREATE INDEX IF NOT EXISTS idx_peer ON attestations(peer, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_observer ON attestations(observer);
+  CREATE INDEX IF NOT EXISTS idx_peer ON attestations(peer);
   CREATE INDEX IF NOT EXISTS idx_block ON attestations(block);
   CREATE INDEX IF NOT EXISTS idx_method ON attestations(method);
-  CREATE INDEX IF NOT EXISTS idx_obs_peer ON attestations(observer, peer, ts DESC);
+  CREATE INDEX IF NOT EXISTS idx_obs_peer ON attestations(observer, peer);
 
   CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
