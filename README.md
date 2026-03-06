@@ -6,6 +6,8 @@ Ingests LOCATE1 attestations from chain via [JungleBus](https://junglebus.gorill
 
 No opinions. No derived data. Just raw attestations, stored and queryable.
 
+**Live instance:** https://locate1.axiemaid.com
+
 ## Endpoints
 
 | Endpoint | Description |
