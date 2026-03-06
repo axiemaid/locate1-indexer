@@ -65,6 +65,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_block ON attestations(block);
   CREATE INDEX IF NOT EXISTS idx_method ON attestations(method);
   CREATE INDEX IF NOT EXISTS idx_obs_peer ON attestations(observer, peer, ts DESC);
+
+  CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
 `)
 
 const insertStmt = db.prepare(`
@@ -84,7 +89,11 @@ function opcodeToNum (chunk) {
 }
 
 function decodeMeasurement (method, buf) {
-  if (method === 1) return buf.readInt8(0)
+  if (method === 1) {
+    if (buf.length < 1) return null
+    return buf.readInt8(0)
+  }
+  if (buf.length < 4) return null
   return buf.readUInt32LE(0)
 }
 
@@ -110,19 +119,64 @@ function parseOutputs (tx) {
 
     if (!observerPub || !peerPub || !method || !measBuf || !sig) continue
 
+    const value = decodeMeasurement(method, measBuf)
+    if (value === null) continue
+
+    // Verify ECDSA signature: sig covers prefix‖version‖observer‖peer‖method‖measurement
+    try {
+      const versionBuf = Buffer.from([version])
+      const methodBuf = Buffer.from([method])
+      const payload = Buffer.concat([
+        chunks[i].buf,       // "LOCATE1"
+        versionBuf,
+        chunks[i + 2].buf,   // observer pubkey
+        chunks[i + 3].buf,   // peer pubkey
+        methodBuf,
+        measBuf
+      ])
+      const hash = bsv.crypto.Hash.sha256(payload)
+      const r = bsv.crypto.BN.fromBuffer(sig.slice(0, 32))
+      const s = bsv.crypto.BN.fromBuffer(sig.slice(32, 64))
+      const sigObj = new bsv.crypto.Signature({ r, s })
+      const pubKey = bsv.PublicKey.fromString(observerPub)
+      const verified = bsv.crypto.ECDSA.verify(hash, sigObj, pubKey)
+      if (!verified) {
+        console.log(`[sig] REJECTED txid=${tx?.hash?.slice(0,16)} observer=${observerPub.slice(0,12)}`)
+        continue
+      }
+    } catch (e) {
+      console.log(`[sig] ERROR ${e.message}`)
+      continue
+    }
+
     results.push({
       observer: observerPub,
       peer: peerPub,
       method: METHODS[method] || String(method),
-      value: decodeMeasurement(method, measBuf),
+      value,
       sig: sig.toString('hex')
     })
   }
   return results
 }
 
+// --- High-water mark ---
+const getMeta = db.prepare('SELECT value FROM meta WHERE key = ?')
+const setMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
+
+function getWatermark () {
+  const row = getMeta.get('lastBlock')
+  return row ? parseInt(row.value) : null
+}
+
+function setWatermark (block) {
+  setMeta.run('lastBlock', String(block))
+}
+
 // --- JungleBus ingestion ---
-let lastBlock = FROM_BLOCK
+const savedBlock = getWatermark()
+let startBlock = savedBlock !== null ? savedBlock : FROM_BLOCK
+let lastBlock = startBlock
 let txCount = 0
 
 const jungle = new JungleBusClient('junglebus.gorillapool.io', {
@@ -140,11 +194,16 @@ function ingest (tx) {
     for (const a of attestations) {
       insertStmt.run(tx.id, tx.block_height || null, tx.block_time || null, a.observer, a.peer, a.method, a.value, a.sig)
     }
-  } catch {}
+  } catch (e) {
+    console.log(`[ingest] ERROR tx=${tx.id} ${e.message}`)
+  }
 }
 
 function onStatus (ctx) {
-  if (ctx.statusCode === 200) lastBlock = ctx.block || lastBlock
+  if (ctx.statusCode === 200 && ctx.block) {
+    lastBlock = ctx.block
+    setWatermark(lastBlock)
+  }
 }
 
 // --- Pagination helper ---
@@ -283,10 +342,11 @@ async function main () {
   const startCount = db.prepare('SELECT COUNT(*) as c FROM attestations').get().c
   console.log(`LOCATE1 Indexer — ${startCount} attestations in db`)
   console.log(`  http://localhost:${PORT}`)
-  console.log(`  JungleBus: ${SUB_ID} from block ${FROM_BLOCK}`)
+  console.log(`  JungleBus: ${SUB_ID}`)
+  console.log(`  Resuming from block ${startBlock}${savedBlock !== null ? ' (persisted)' : ' (--from flag)'}`)
 
   server.listen(PORT)
-  await jungle.Subscribe(SUB_ID, FROM_BLOCK, ingest, onStatus, console.error, ingest)
+  await jungle.Subscribe(SUB_ID, startBlock, ingest, onStatus, console.error, ingest)
 
   setInterval(() => {
     const total = db.prepare('SELECT COUNT(*) as c FROM attestations').get().c
