@@ -13,17 +13,27 @@ No opinions. No derived data. Just raw attestations, stored and queryable.
 | Endpoint | Description |
 |---|---|
 | `GET /status` | Network stats — attestation count, observers, peers, scan progress |
-| `GET /pubkey/:pub` | Full history — every attestation involving this key (as observer or peer) |
-| `GET /pair/:pub1/:pub2` | Relationship — every attestation between two specific machines |
-| `GET /blocks?from=N&to=M` | Time window — attestations in a block range (for trilateration) |
-| `GET /observer/:pub` | One machine's worldview — everything it observed |
-| `GET /peer/:pub` | Evidence of existence — everything observed about this key |
-| `GET /method/:type` | By measurement type — `rssi`, `uwb`, or `ultrasonic` |
+| `GET /pubkey/:pub` | Full history — every attestation involving this key (as observer or peer) ¹ |
+| `GET /pair/:pub1/:pub2` | Relationship — every attestation between two specific machines ¹ |
+| `GET /blocks?from=N&to=M` | Time window — attestations in a block range (for trilateration) ¹ |
+| `GET /observer/:pub` | One machine's worldview — everything it observed ¹ |
+| `GET /peer/:pub` | Evidence of existence — everything observed about this key ¹ |
+| `GET /method/:type` | By measurement type — `rssi`, `uwb`, or `ultrasonic` ¹ |
 | `GET /latest/:pub` | Current presence — most recent attestation involving this key |
 | `GET /active?from=N&to=M` | Attendance list — all pubkeys active in a block range |
 | `GET /count/:pub` | Availability score — total attestation count for a pubkey |
 
-All list endpoints accept `?limit=` (default 100, max 1000).
+¹ Supports cursor pagination (`?after=&limit=`)
+
+All list endpoints return paginated responses:
+
+```json
+{ "data": [...], "cursor": 42, "hasMore": true }
+```
+
+Pass `?after=<cursor>` to get the next page. Poll with your last cursor to stream new attestations.
+
+`?limit=` controls page size (default 100, max 1000).
 
 ## JungleBus Subscription
 
