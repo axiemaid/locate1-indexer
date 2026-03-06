@@ -2,3 +2,5 @@ node_modules/
 locate1.db
 locate1.db-wal
 locate1.db-shm
+collector.cjs
+package-lock.json
