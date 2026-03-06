@@ -22,6 +22,7 @@ No opinions. No derived data. Just raw attestations, stored and queryable.
 | `GET /latest/:pub` | Current presence — most recent attestation involving this key |
 | `GET /active?from=N&to=M` | Attendance list — all pubkeys active in a block range |
 | `GET /count/:pub` | Availability score — total attestation count for a pubkey |
+| `ws://` | WebSocket — live attestations pushed as JSON on connect |
 
 ¹ Supports cursor pagination (`?after=&limit=`)
 
@@ -34,6 +35,16 @@ All list endpoints return paginated responses:
 Pass `?after=<cursor>` to get the next page. Poll with your last cursor to stream new attestations.
 
 `?limit=` controls page size (default 100, max 1000).
+
+### WebSocket
+
+Connect to `ws://host:port` for real-time attestation push. Each verified attestation is broadcast as a JSON message:
+
+```json
+{"txid":"...","block":null,"ts":1772774554,"observer":"03033398...","peer":"03a00f7c...","method":"rssi","measurement":-20}
+```
+
+The `block` field is `null` for mempool attestations and gets backfilled on confirmation. Same port as the REST API — upgrade-based.
 
 ## JungleBus Subscription
 

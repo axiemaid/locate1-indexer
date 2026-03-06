@@ -21,6 +21,7 @@ try { Object.defineProperty(globalThis, 'localStorage', { value: _ls, writable: 
 const { JungleBusClient } = require('@gorillapool/js-junglebus')
 const bsv = require('bsv')
 const http = require('http')
+const { WebSocketServer } = require('ws')
 const Database = require('better-sqlite3')
 const path = require('path')
 
@@ -193,6 +194,8 @@ function ingest (tx) {
     const attestations = parseOutputs(parsed)
     for (const a of attestations) {
       insertStmt.run(tx.id, tx.block_height || null, tx.block_time || null, a.observer, a.peer, a.method, a.value, a.sig)
+      // Live fan-out to WebSocket clients
+      wsBroadcast({ txid: tx.id, block: tx.block_height || null, ts: tx.block_time || null, ...a })
     }
   } catch (e) {
     console.log(`[ingest] ERROR tx=${tx.id} ${e.message}`)
@@ -203,6 +206,16 @@ function onStatus (ctx) {
   if (ctx.statusCode === 200 && ctx.block) {
     lastBlock = ctx.block
     setWatermark(lastBlock)
+  }
+}
+
+// --- WebSocket ---
+const clients = new Set()
+
+function wsBroadcast (msg) {
+  const json = JSON.stringify(msg)
+  for (const ws of clients) {
+    if (ws.readyState === 1) ws.send(json)
   }
 }
 
@@ -236,7 +249,7 @@ const server = http.createServer((req, res) => {
       const observers = db.prepare('SELECT COUNT(DISTINCT observer) as c FROM attestations').get().c
       const peers = db.prepare('SELECT COUNT(DISTINCT peer) as c FROM attestations').get().c
       const latest = db.prepare('SELECT MAX(block) as b FROM attestations').get().b
-      return json(res, { attestations: total, observers, peers, latestBlock: latest, scanBlock: lastBlock, uptime: process.uptime() | 0 })
+      return json(res, { attestations: total, observers, peers, latestBlock: latest, scanBlock: lastBlock, wsClients: clients.size, uptime: process.uptime() | 0 })
     }
 
     // 2. By pubkey — everything involving this key (as observer OR peer)
@@ -344,6 +357,14 @@ async function main () {
   console.log(`  http://localhost:${PORT}`)
   console.log(`  JungleBus: ${SUB_ID}`)
   console.log(`  Resuming from block ${startBlock}${savedBlock !== null ? ' (persisted)' : ' (--from flag)'}`)
+
+  // WebSocket upgrades on the same port
+  const wss = new WebSocketServer({ server })
+  wss.on('connection', (ws) => {
+    clients.add(ws)
+    ws.on('close', () => clients.delete(ws))
+    ws.on('error', () => clients.delete(ws))
+  })
 
   server.listen(PORT)
   await jungle.Subscribe(SUB_ID, startBlock, ingest, onStatus, console.error, ingest)
